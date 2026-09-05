@@ -40,6 +40,12 @@ Branch lets a trader chain DreamDEX positions. ORACLELESS is a condition layer: 
 - **Permissionless execution.** Anyone may call `execute()`. Nobody can fake the outcome, redirect the payout, or mutate the condition.
 - **Fail closed.** Voided, wrong-outcome, unresolved, and expired conditions never release funds. The creator reclaims after expiry.
 
+## Live
+
+- **Frontend:** https://oracleless-prod.vercel.app (create a condition against live DreamDEX markets, verify from chain)
+- **Vault (Shannon):** `0xa40d72099A2db0DCb7696859Fe1A800D9dE4a7B5`
+- **Proof condition #1:** created on real market `0x…1445c` (BTC, resolved UP) → 100 tUSDC released to recipient on execute. Verify: `CONDITION_VAULT=0xa40d72099A2db0DCb7696859Fe1A800D9dE4a7B5 node web/scripts/verify.mjs 1`
+
 ## Contracts (Shannon testnet, chain 50312)
 
 | Contract | Address |
