@@ -1,0 +1,16 @@
+{
+  "network": "Somnia Shannon",
+  "chainId": 50312,
+  "rpc": "https://dream-rpc.somnia.network",
+  "indexer": "https://dev.smk.somnia.host/v1/graphql",
+  "explorer": "https://shannon-explorer.somnia.network",
+  "OraclelessConditionVault": "",
+  "deploymentTx": "",
+  "deployedAt": "",
+  "dreamdex": {
+    "BinaryMarketsModule": "0x3ecC694Cef705358864a646142ac17A90E29e388",
+    "BinarySettlement": "0xbF4a49e0Dfd092e5FBE8E5761064C49533e6Ed23",
+    "OutcomeToken6909": "0xB52c5934113Af5c0Bb20eb3C72290C8215f755b9",
+    "tUSDC": "0x70a86D8842FB63C4Ad2b7cdddF530eBf1BB25d8E"
+  }
+}
