@@ -15,11 +15,11 @@ contract DeployOracleless is Script {
     address constant BINARY_MODULE = 0x3ecC694Cef705358864a646142ac17A90E29e388;
 
     function run() external returns (OraclelessConditionVault vault) {
-        uint256 pk = vm.envUint("PRIVATE_KEY");
-        vm.startBroadcast(pk);
+        vm.startBroadcast();
         vault = new OraclelessConditionVault(BINARY_MODULE);
         vm.stopBroadcast();
         console2.log("OraclelessConditionVault deployed at:", address(vault));
+        console2.log("deployer:", msg.sender);
         console2.log("binaryModule:", vault.binaryModule());
     }
 }

@@ -4,9 +4,9 @@
   "rpc": "https://dream-rpc.somnia.network",
   "indexer": "https://dev.smk.somnia.host/v1/graphql",
   "explorer": "https://shannon-explorer.somnia.network",
-  "OraclelessConditionVault": "",
-  "deploymentTx": "",
-  "deployedAt": "",
+  "OraclelessConditionVault": "0xa40d72099A2db0DCb7696859Fe1A800D9dE4a7B5",
+  "deploymentTx": "0x2cb0713a18c9ae8e2ec227ac0bd8720e8098762b5f50cadfeeeff4671ce07649",
+  "deployedAt": "2026-09-05T15:01:39.121415Z",
   "dreamdex": {
     "BinaryMarketsModule": "0x3ecC694Cef705358864a646142ac17A90E29e388",
     "BinarySettlement": "0xbF4a49e0Dfd092e5FBE8E5761064C49533e6Ed23",

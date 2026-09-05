@@ -11,3 +11,4 @@ contracts/lib/
 node_modules/
 .next/
 dist/
+.env.deployer
