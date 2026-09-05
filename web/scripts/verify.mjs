@@ -5,7 +5,7 @@
 // Usage: node scripts/verify.mjs <conditionId>
 //        node scripts/verify.mjs <conditionId> --json
 
-import { createPublicClient, http } from "viem";
+import { createPublicClient, http, parseAbi } from "viem";
 
 const RPC = process.env.RPC_URL ?? "https://dream-rpc.somnia.network";
 const VAULT = process.env.VITE_CONDITION_VAULT ?? process.env.CONDITION_VAULT;
@@ -56,14 +56,14 @@ const vaultAbi = [
   },
 ];
 
-const marketAbi = [
+const marketAbi = parseAbi([
   "function isResolved() view returns (bool)",
   "function isVoided() view returns (bool)",
   "function payoutNumerators() view returns (uint256[])",
-];
-const moduleAbi = [
+]);
+const moduleAbi = parseAbi([
   "function markets(bytes32 marketId) view returns (uint256 oracleQuestionId, uint8 outcomeSlotCount, uint8 voidPolicy, address collateral, uint32 originOperatorId, bytes32 originVenueId, address oracleAdapter, address creator, address market, address pool, uint256 yesId, uint256 noId, uint64 tradingStart, uint64 expiry)",
-];
+]);
 
 const STATE = ["PENDING", "SATISFIED", "FAILED", "EXECUTED", "EXPIRED"];
 
@@ -86,10 +86,12 @@ async function main() {
   ]);
 
   const stateName = STATE[Number(state)] ?? `UNKNOWN(${state})`;
+  const expRaw = cond.expected;
+  const expLabel = expRaw === 0n || expRaw === 0 ? "UP" : expRaw === 1n || expRaw === 1 ? "DOWN" : String(expRaw);
   const out = {
     condition: id,
     vault: VAULT,
-    expected: cond.expected === 0n ? "UP" : cond.expected === 1n ? "DOWN" : String(cond.expected),
+    expected: expLabel,
     recipient: cond.recipient,
     amountRaw: cond.amount.toString(),
     expiry: Number(cond.expiry),
