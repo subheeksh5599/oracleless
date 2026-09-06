@@ -1,9 +1,25 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPublicClient, http, parseAbi } from "viem";
-import { CONDITION_VAULT, EXPLORER_URL, INDEXER_URL, RPC_URL, TUSDC, TUSDC_DECIMALS, somniaShannon, vaultAbi } from "./lib/config";
+import { Badge } from "./components/ui/badge";
+import { Button } from "./components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
+import { Input } from "./components/ui/input";
+import { Label } from "./components/ui/label";
+import { Separator } from "./components/ui/separator";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table";
+import {
+  CONDITION_VAULT,
+  EXPLORER_URL,
+  INDEXER_URL,
+  RPC_URL,
+  TUSDC,
+  TUSDC_DECIMALS,
+  somniaShannon,
+  vaultAbi,
+} from "./lib/config";
 import { fetchLiveMarkets, marketLabel, marketQuestion, type LiveMarket } from "./lib/markets";
-import { ensureConnected, switchToShannon, useWallet } from "./lib/wallet";
-import "./App.css";
+import { ensureConnected, shortAddr, switchToShannon, useWallet } from "./lib/wallet";
+import "./index.css";
 
 export const publicClient = createPublicClient({ chain: somniaShannon, transport: http(RPC_URL) });
 
@@ -14,19 +30,18 @@ const erc20Abi = parseAbi([
 ]);
 
 const STATE_NAMES = ["PENDING", "SATISFIED", "FAILED", "EXECUTED", "EXPIRED"] as const;
-const STATE_COLORS: Record<string, string> = {
-  PENDING: "var(--accent)",
-  SATISFIED: "var(--ok)",
-  FAILED: "var(--bad)",
-  EXECUTED: "var(--ok)",
-  EXPIRED: "var(--muted)",
-};
+
+function stateBadgeVariant(state: number): "default" | "secondary" | "destructive" | "outline" {
+  if (state === 1 || state === 3) return "default"; // satisfied / executed: chartreuse
+  if (state === 2) return "destructive"; // failed
+  return "outline";
+}
 
 export interface ConditionRow {
   marketId: string;
   market: string;
   collateral: string;
-  expected: number; // 0 UP 1 DOWN
+  expected: number;
   recipient: string;
   amount: bigint;
   expiry: bigint;
@@ -34,13 +49,12 @@ export interface ConditionRow {
 }
 
 export async function readCondition(id: bigint): Promise<ConditionRow> {
-  const c = (await publicClient.readContract({
+  return (await publicClient.readContract({
     address: CONDITION_VAULT as `0x${string}`,
     abi: vaultAbi,
     functionName: "getCondition",
     args: [id],
   })) as unknown as ConditionRow;
-  return c;
 }
 
 export async function readConditionState(id: bigint): Promise<number> {
@@ -65,15 +79,14 @@ export async function readConditionCount(): Promise<number> {
   );
 }
 
-function shortAddr(a: string): string {
-  return `${a.slice(0, 6)}…${a.slice(-4)}`;
-}
-
 function addrLink(a: string): string {
   return `${EXPLORER_URL}/address/${a}`;
 }
 
-// tiny hash router
+function txLink(h: string): string {
+  return `${EXPLORER_URL}/tx/${h}`;
+}
+
 function useRoute(): string {
   const [route, setRoute] = useState(window.location.hash.replace(/^#/, "") || "/");
   useEffect(() => {
@@ -88,46 +101,65 @@ function nav(h: string) {
   window.location.hash = h;
 }
 
+/* ---------------- shell ---------------- */
+
 function App() {
   const route = useRoute();
+  const wallet = useWallet();
 
   useEffect(() => {
-    // subscribe to wallet events only when a wallet is present
     window.ethereum?.on?.("accountsChanged", () => window.location.reload());
     window.ethereum?.on?.("chainChanged", () => window.location.reload());
   }, []);
 
+  const wrongChain = !!wallet.address && wallet.chainId !== somniaShannon.id;
+
   let page: React.ReactNode;
-  if (route.startsWith("/condition/")) {
-    page = <ConditionDetailView id={route.split("/")[2]} />;
-  } else if (route.startsWith("/verify")) {
-    page = <VerifyView />;
-  } else if (route.startsWith("/conditions")) {
-    page = <ConditionsView />;
-  } else if (route.startsWith("/docs")) {
-    page = <DocsView />;
-  } else {
-    page = <HomeView />;
-  }
+  if (route.startsWith("/condition/")) page = <ConditionDetailView id={route.split("/")[2]} />;
+  else if (route.startsWith("/verify")) page = <VerifyView />;
+  else if (route.startsWith("/conditions")) page = <ConditionsView />;
+  else if (route.startsWith("/docs")) page = <DocsView />;
+  else page = <HomeView />;
 
   return (
-    <div className="shell">
-      <header className="topbar">
-        <div className="brand" onClick={() => nav("/")}>
-          <span className="logo">◈</span> ORACLELESS
+    <div className="min-h-dvh flex flex-col">
+      <header className="sticky top-0 z-10 border-b border-foreground/15 bg-[#edeae3]/95 backdrop-blur">
+        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4">
+          <button className="display text-xl font-bold tracking-tight" onClick={() => nav("/")}>
+            ORACLELESS
+          </button>
+          <nav className="hidden items-center gap-1 md:flex">
+            <NavBtn route="/" active={route === "/" || route.startsWith("/condition")}>
+              Home
+            </NavBtn>
+            <NavBtn route="/conditions" active={route.startsWith("/conditions")}>
+              Conditions
+            </NavBtn>
+            <NavBtn route="/verify" active={route.startsWith("/verify")}>
+              Verify
+            </NavBtn>
+            <NavBtn route="/docs" active={route.startsWith("/docs")}>
+              Docs
+            </NavBtn>
+          </nav>
+          <div className="flex items-center gap-2">
+            {wrongChain && (
+              <Button size="sm" onClick={() => switchToShannon()}>
+                Switch to Shannon
+              </Button>
+            )}
+            <WalletButton />
+          </div>
         </div>
-        <nav>
-          <NavBtn route="/" active={route === "/" || route.startsWith("/condition")}>Home</NavBtn>
-          <NavBtn route="/conditions" active={route.startsWith("/conditions")}>Conditions</NavBtn>
-          <NavBtn route="/verify" active={route.startsWith("/verify")}>Verify</NavBtn>
-          <NavBtn route="/docs" active={route.startsWith("/docs")}>Docs</NavBtn>
-        </nav>
-        <WalletButton />
       </header>
-      <main>{page}</main>
-      <footer className="foot">
-        <span>Live on Somnia Shannon · testnet</span>
-        <span className="muted">DreamDEX determines what happened. ORACLELESS determines what that fact may trigger.</span>
+
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{page}</main>
+
+      <footer className="border-t border-foreground/15 py-6">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-1 px-4 text-[13px] text-foreground/55 md:flex-row md:items-center md:justify-between">
+          <span className="data text-xs uppercase tracking-wide">Live on Somnia Shannon, testnet, chain 50312</span>
+          <span>DreamDEX determines what happened. ORACLELESS determines what that fact may trigger.</span>
+        </div>
       </footer>
     </div>
   );
@@ -135,41 +167,41 @@ function App() {
 
 function NavBtn({ route, active, children }: { route: string; active: boolean; children: React.ReactNode }) {
   return (
-    <button className={`navbtn ${active ? "on" : ""}`} onClick={() => nav(route)}>
+    <Button
+      variant={active ? "secondary" : "ghost"}
+      size="sm"
+      className="data text-xs uppercase tracking-wider"
+      onClick={() => nav(route)}
+    >
       {children}
-    </button>
+    </Button>
   );
 }
 
 function WalletButton() {
   const wallet = useWallet();
-  const onConnect = async () => {
-    await ensureConnected();
-    await switchToShannon();
-  };
   if (!wallet.address) {
     return (
-      <button className="walletbtn" onClick={onConnect}>
+      <Button
+        className="border-2 border-foreground bg-[#d9ff00] px-3 py-1.5 text-[13px] font-semibold text-foreground shadow-[3px_3px_0_#0a0a0a] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all"
+        onClick={async () => {
+          await ensureConnected();
+          await switchToShannon();
+        }}
+      >
         Connect wallet
-      </button>
+      </Button>
     );
   }
-  const onWrong = wallet.chainId !== somniaShannon.id;
   return (
-    <div className="walletrow">
-      {onWrong && (
-        <button className="walletbtn warn" onClick={() => switchToShannon()}>
-          Switch to Shannon
-        </button>
-      )}
-      <span className="pill" title={wallet.address}>
-        {shortAddr(wallet.address)}
-      </span>
+    <div className="data flex items-center gap-1 border border-foreground/30 bg-white/60 px-2.5 py-1 text-xs">
+      <span className="inline-block size-1.5 rounded-full bg-[#2c5f4d]" />
+      {shortAddr(wallet.address)}
     </div>
   );
 }
 
-// ---------------- HOME ----------------
+/* ---------------- home ---------------- */
 
 function HomeView() {
   const [count, setCount] = useState<number | null>(null);
@@ -177,112 +209,173 @@ function HomeView() {
   useEffect(() => {
     readConditionCount().then(setCount).catch(() => setCount(null));
     fetchLiveMarkets(INDEXER_URL, 4)
-      .then((m) => setMarkets(m.filter((x) => x.clobStatus === "Trading").slice(0, 3)))
+      .then((ms) => setMarkets(ms.filter((x) => x.clobStatus === "Trading").slice(0, 3)))
       .catch(() => setMarkets([]));
   }, []);
 
+  const mechanism = useMemo(
+    () => [
+      { label: "Market", text: "A DreamDEX event contract is trading" },
+      { label: "Outcome", text: "It settles UP or DOWN on chain" },
+      { label: "Condition", text: "The vault reads the resolved state" },
+      { label: "Action", text: "Funds release to the recipient" },
+    ],
+    [],
+  );
+
   return (
-    <div className="homewrap">
-      <div className="hero">
-        <div className="hero-kicker">DREAMDEX EVENT CONTRACTS × SOMNIA</div>
-        <h1>
-          DreamDEX events, <em>now programmable</em>.
-        </h1>
-        <p className="hero-sub">
-          ORACLELESS turns finalized DreamDEX Event Contracts into verifiable conditions for arbitrary on-chain actions.
-          Lock funds behind a market outcome — the vault releases them only when the chain says the condition holds.
-        </p>
-        <div className="hero-ctas">
-          <button className="cta" onClick={() => nav("/conditions")}>
-            CREATE A CONDITION
-          </button>
-          <a className="btnlink" onClick={() => nav("/verify")} style={{ cursor: "pointer" }}>
-            Verify a condition →
-          </a>
+    <div className="space-y-10">
+      {/* hero */}
+      <section className="grid gap-6 pt-6 lg:grid-cols-[1.2fr_1fr]">
+        <div>
+          <div className="data mb-3 inline-flex items-center gap-2 border border-foreground/20 px-2 py-1 text-[11px] uppercase tracking-widest">
+            <span className="inline-block size-1.5 animate-pulse rounded-full bg-[#ff4d00]" />
+            Live on Shannon
+          </div>
+          <h1 className="display text-5xl font-bold leading-[0.95] tracking-tight sm:text-6xl">
+            DreamDEX events,
+            <br />
+            <span className="serif-it font-normal">now programmable.</span>
+          </h1>
+          <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-foreground/70">
+            ORACLELESS turns finalized DreamDEX Event Contracts into conditions for arbitrary on-chain actions. Lock
+            funds behind a market outcome. The vault releases them only when the chain proves the condition holds.
+          </p>
+          <div className="mt-7 flex flex-wrap items-center gap-3">
+            <Button
+              size="lg"
+              className="display border-2 border-foreground bg-[#d9ff00] px-6 text-sm font-semibold uppercase tracking-wider text-foreground shadow-[4px_4px_0_#0a0a0a] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none"
+              onClick={() => nav("/conditions")}
+            >
+              Create a condition
+            </Button>
+            <Button variant="ghost" size="lg" className="data text-sm uppercase tracking-wider" onClick={() => nav("/verify")}>
+              Verify condition 1
+            </Button>
+          </div>
         </div>
-      </div>
 
-      <div className="flow">
-        <div>DreamDEX market</div>
-        <div className="arrow">↓ settles</div>
-        <div>on-chain outcome</div>
-        <div className="arrow">↓ verified</div>
-        <div>condition</div>
-        <div className="arrow">↓ triggers</div>
-        <div>external action</div>
-      </div>
-
-      <div className="homerow">
-        <section className="card">
-          <h3>Vault status</h3>
-          <div className="kvline">
-            <span>ConditionVault</span>
-            <a className="mono" href={addrLink(CONDITION_VAULT)} target="_blank" rel="noreferrer">
-              {shortAddr(CONDITION_VAULT)}
+        {/* live receipt card */}
+        <Card className="border-2 border-foreground bg-white/50 shadow-[6px_6px_0_#0a0a0a]">
+          <CardHeader className="pb-2">
+            <CardTitle className="data flex items-center justify-between text-xs uppercase tracking-widest">
+              <span>Proof, on chain</span>
+              <Badge variant="default" className="border-2 border-foreground">
+                LIVE
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Row k="Vault" mono link={addrLink(CONDITION_VAULT)} v={CONDITION_VAULT ? shortAddr(CONDITION_VAULT) : "not deployed"} />
+            <Row k="Conditions" v={count === null ? "-" : String(count)} />
+            <Separator />
+            <Row k="Condition 1" v="EXECUTED" accent />
+            <Row k="Market" v="BTC, settled UP" />
+            <Row k="Recipient paid" v="100 tUSDC" />
+            <a className="data block pt-1 text-[11px] uppercase tracking-wider underline underline-offset-4" href={txLink("0x882e7656a2908fe5d20aea33adfb764b78ca2cc60f5882e8f0e234b6c4fcb955")} target="_blank" rel="noreferrer">
+              view release tx ↗
             </a>
-          </div>
-          <div className="kvline">
-            <span>Conditions created</span>
-            <b>{count ?? "—"}</b>
-          </div>
-          <div className="kvline">
-            <span>Network</span>
-            <b>Somnia Shannon</b>
-          </div>
-          <div className="kvline">
-            <span>Source of truth</span>
-            <b>chain</b>
-          </div>
-          <button className="cta" onClick={() => nav("/conditions")} disabled={!CONDITION_VAULT}>
-            {CONDITION_VAULT ? "Browse conditions" : "Vault not deployed"}
-          </button>
-        </section>
+          </CardContent>
+        </Card>
+      </section>
 
-        <section className="card">
-          <h3>Live DreamDEX markets</h3>
-          {markets.length === 0 ? (
-            <p className="muted small">No markets trading right now — check back at the next window.</p>
-          ) : (
-            markets.map((m) => (
-              <button key={m.marketId} className="marketrow" onClick={() => nav("/conditions")}>
-                <div className="mrow-top">
-                  <span className="mtitle">{marketLabel(m)}</span>
-                  <span className="mstatus live">LIVE</span>
-                </div>
-                <div className="mq">{marketQuestion(m)}</div>
+      {/* mechanism */}
+      <section className="border-2 border-foreground bg-[#0a0a0a] p-6 text-[#edeae3] sm:p-8">
+        <div className="data mb-6 text-xs uppercase tracking-widest text-[#edeae3]/50">The mechanism</div>
+        <div className="grid gap-6 md:grid-cols-4">
+          {mechanism.map((s, i) => (
+            <div key={s.label}>
+              <div className="display mb-2 text-sm font-semibold text-[#d9ff00]">0{i + 1}</div>
+              <div className="display mb-1 text-lg font-semibold uppercase tracking-wide">{s.label}</div>
+              <div className="text-sm text-[#edeae3]/65">{s.text}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* trust model */}
+      <section className="grid gap-4 md:grid-cols-3">
+        <Card className="border border-foreground/20">
+          <CardContent className="pt-6">
+            <div className="display mb-2 text-lg font-semibold uppercase">Source of truth is the chain</div>
+            <p className="text-sm text-foreground/65">
+              The vault reads the market contract's isResolved and payout vector. No indexer, backend, or keeper decides
+              the outcome.
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border border-foreground/20">
+          <CardContent className="pt-6">
+            <div className="display mb-2 text-lg font-semibold uppercase">Anyone can execute</div>
+            <p className="text-sm text-foreground/65">
+              execute() is permissionless. Nobody can fake the outcome, redirect the payout, or mutate the condition.
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border border-foreground/20">
+          <CardContent className="pt-6">
+            <div className="display mb-2 text-lg font-semibold uppercase">Fail closed</div>
+            <p className="text-sm text-foreground/65">
+              Wrong outcome, voided, unresolved, and expired conditions never release funds. The creator reclaims after
+              expiry.
+            </p>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* live markets */}
+      <section>
+        <div className="data mb-4 text-xs uppercase tracking-widest text-foreground/50">Trading right now, on DreamDEX</div>
+        {markets.length === 0 ? (
+          <p className="text-sm text-foreground/55">No markets trading at this instant. Markets roll every 5 minutes.</p>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-3">
+            {markets.map((m) => (
+              <button key={m.marketId} className="border border-foreground/20 bg-white/40 p-4 text-left transition-colors hover:bg-[#d9ff00]/40" onClick={() => nav("/conditions")}>
+                <div className="data mb-1 text-xs uppercase tracking-wider text-foreground/60">{marketLabel(m)}</div>
+                <div className="text-sm font-medium">{marketQuestion(m)}</div>
               </button>
-            ))
-          )}
-        </section>
-      </div>
-
-      <div className="card trust">
-        <h3>The trust model, in three lines</h3>
-        <ul>
-          <li>
-            <b>DreamDEX determines what happened.</b> The vault reads the market contract's canonical state (isResolved +
-            payout vector) — never a frontend, indexer, backend, or keeper.
-          </li>
-          <li>
-            <b>ORACLELESS determines what that fact may trigger.</b> execute() is permissionless: anyone can fire it, nobody
-            can fake the outcome.
-          </li>
-          <li>
-            <b>Fail closed.</b> Voided, wrong-outcome, unresolved, and expired conditions never release funds. The creator
-            reclaims after expiry.
-          </li>
-        </ul>
-      </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
-// ---------------- CREATE / CONDITIONS ----------------
+function Row({ k, v, mono, link, accent }: { k: string; v: string; mono?: boolean; link?: string; accent?: boolean }) {
+  const inner = (
+    <>
+      <span className={mono ? "data" : ""}>{k}</span>
+      <span className={`${mono ? "data" : ""} ${accent ? "font-semibold text-[#2c5f4d]" : "font-medium"}`}>{v}</span>
+    </>
+  );
+  return (
+    <div className="flex items-center justify-between gap-2 py-1 text-sm">
+      {link ? (
+        <a className="flex w-full items-center justify-between gap-2 text-[13px] underline-offset-4 hover:underline" href={link} target="_blank" rel="noreferrer">
+          {inner}
+        </a>
+      ) : (
+        inner
+      )}
+    </div>
+  );
+}
+
+/* ---------------- create / conditions ---------------- */
 
 function ConditionsView() {
   const wallet = useWallet();
   return (
-    <div>
+    <div className="space-y-8">
+      <div className="space-y-1">
+        <h1 className="display text-3xl font-bold uppercase tracking-tight">Create a condition</h1>
+        <p className="text-sm text-foreground/60">
+          Lock tUSDC behind a DreamDEX outcome. The vault releases to the recipient only when the market settles as you
+          expect.
+        </p>
+      </div>
       <CreateView wallet={wallet} />
       <RecentConditions />
     </div>
@@ -303,8 +396,8 @@ function CreateView({ wallet }: { wallet: { address: `0x${string}` | null; chain
 
   useEffect(() => {
     fetchLiveMarkets(INDEXER_URL)
-      .then((ms) => setMarkets(ms))
-      .catch((e) => setMarketErr(String(e.message ?? e)));
+      .then(setMarkets)
+      .catch((e) => setMarketErr(String((e as Error).message ?? e)));
   }, []);
 
   const connected = !!wallet.address && wallet.chainId === somniaShannon.id;
@@ -326,7 +419,7 @@ function CreateView({ wallet }: { wallet: { address: `0x${string}` | null; chain
         args: [CONDITION_VAULT as `0x${string}`, amt],
         account: wallet.address,
       });
-      setMsg(`Approval sent…`);
+      setMsg("Approval sent. Confirm the second transaction to lock funds.");
       await publicClient.waitForTransactionReceipt({ hash: appr });
 
       const tx = await wc.writeContract({
@@ -336,101 +429,154 @@ function CreateView({ wallet }: { wallet: { address: `0x${string}` | null; chain
         args: [selected.marketId as `0x${string}`, TUSDC, side === "UP" ? 0 : 1, recipient as `0x${string}`, amt, expiry],
         account: wallet.address,
       });
-      setMsg("Creating condition…");
+      setMsg("Creating condition...");
       const receipt = await publicClient.waitForTransactionReceipt({ hash: tx });
-      const iface = "event ConditionCreated(uint256 indexed conditionId, bytes32 indexed marketId, address indexed creator, address recipient, address collateral, uint256 amount, uint8 expected, uint64 expiry)";
+      const iface =
+        "event ConditionCreated(uint256 indexed conditionId, bytes32 indexed marketId, address indexed creator, address recipient, address collateral, uint256 amount, uint8 expected, uint64 expiry)";
       let id: string | null = null;
       for (const log of receipt.logs ?? []) {
         try {
           const d = decodeEventLog({ abi: [iface], data: log.data, topics: log.topics as [`0x${string}`, ...`0x${string}`[]] });
-          if (d.eventName === "ConditionCreated") id = ((d.args as unknown as { conditionId: bigint }).conditionId).toString();
+          if (d.eventName === "ConditionCreated") id = String((d.args as unknown as { conditionId: bigint }).conditionId);
         } catch {
           /* not ours */
         }
       }
-      setCreatedId(id ?? (await readConditionCount()).toString());
+      setCreatedId(id ?? String(await readConditionCount()));
       setMsg(null);
     } catch (e) {
-      setMsg(`Transaction failed: ${(e as Error).message?.slice(0, 200) ?? e}`);
+      setMsg(`Transaction failed: ${(e as Error).message?.slice(0, 200) ?? String(e)}`);
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="creategrid">
-      <section className="card step">
-        <h2>1 · Pick a live DreamDEX market</h2>
-        {marketErr && <p className="err">Could not load markets: {marketErr}</p>}
-        {!marketErr && markets.length === 0 && <p className="muted small">Loading markets…</p>}
-        <div className="marketlist">
-          {markets.map((m) => (
-            <button key={m.marketId} className={`marketrow ${selected?.marketId === m.marketId ? "on" : ""}`} onClick={() => setSelected(m)}>
-              <div className="mrow-top">
-                <span className="mtitle">{marketLabel(m)}</span>
-                <span className={`mstatus ${m.clobStatus === "Trading" ? "live" : "settled"}`}>{m.clobStatus === "Trading" ? "LIVE" : "SETTLED"}</span>
-              </div>
-              <div className="mq">{marketQuestion(m)}</div>
-            </button>
-          ))}
-        </div>
-        {markets.some((m) => m.clobStatus === "Finalized") && (
-          <p className="muted small" style={{ marginTop: 8 }}>
-            Settled markets are listed too — a condition on an already-settled market is immediately satisfiable, useful for testing the full path.
-          </p>
-        )}
-      </section>
+    <div className="grid gap-6 lg:grid-cols-2">
+      {/* pick market */}
+      <Card className="border-2 border-foreground">
+        <CardHeader>
+          <CardTitle className="display text-sm uppercase tracking-wider">1. Pick a market</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {marketErr && <p className="mb-3 text-sm text-[#ff4d00]">Could not load markets: {marketErr}</p>}
+          {!marketErr && markets.length === 0 && <p className="text-sm text-foreground/55">Loading live markets...</p>}
+          <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+            {markets.map((m) => {
+              const isSel = selected?.marketId === m.marketId;
+              const live = m.clobStatus === "Trading";
+              return (
+                <button
+                  key={m.marketId}
+                  className={`block w-full border p-3 text-left transition-colors ${isSel ? "border-foreground bg-[#d9ff00]/50" : "border-foreground/20 bg-white/40 hover:bg-white/70"}`}
+                  onClick={() => setSelected(m)}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="data text-xs uppercase tracking-wider">{marketLabel(m)}</span>
+                    <Badge variant={live ? "default" : "secondary"} className="border border-foreground">
+                      {live ? "LIVE" : "SETTLED"}
+                    </Badge>
+                  </div>
+                  <div className="mt-1 text-[13px] text-foreground/70">{marketQuestion(m)}</div>
+                </button>
+              );
+            })}
+          </div>
+          {markets.some((m) => m.clobStatus === "Finalized") && (
+            <p className="mt-3 text-xs text-foreground/50">
+              Settled markets are listed too. A condition on a settled market is satisfiable immediately, which proves the
+              full release path.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
-      <section className="card step">
-        <h2>2 · Set the condition</h2>
-        {!selected ? (
-          <p className="muted">Select a market to continue.</p>
-        ) : (
-          <>
-            <div className="siderow">
-              <button className={`sidebtn ${side === "UP" ? "on up" : ""}`} onClick={() => setSide("UP")}>settles UP</button>
-              <button className={`sidebtn ${side === "DOWN" ? "on down" : ""}`} onClick={() => setSide("DOWN")}>settles DOWN</button>
-            </div>
-            <label>
-              Amount (tUSDC)
-              <input type="number" value={amount} min="1" onChange={(e) => setAmount(e.target.value)} />
-            </label>
-            <label>
-              Recipient address
-              <input placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
-            </label>
-            <label>
-              Expiry (minutes)
-              <input type="number" value={expiryMin} min="1" onChange={(e) => setExpiryMin(e.target.value)} />
-            </label>
-
-            <div className="condbox">
-              <div className="condline">
-                <span className="k">IF</span> {marketLabel(selected)} <span className="k">settles {side}</span>
+      {/* set the condition */}
+      <Card className="border-2 border-foreground">
+        <CardHeader>
+          <CardTitle className="display text-sm uppercase tracking-wider">2. Set the condition</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!selected ? (
+            <p className="text-sm text-foreground/55">Select a market to continue.</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant={side === "UP" ? "default" : "outline"}
+                  className="display uppercase tracking-wider"
+                  onClick={() => setSide("UP")}
+                >
+                  settles UP
+                </Button>
+                <Button
+                  variant={side === "DOWN" ? "default" : "outline"}
+                  className="display uppercase tracking-wider"
+                  onClick={() => setSide("DOWN")}
+                >
+                  settles DOWN
+                </Button>
               </div>
-              <div className="condline">
-                <span className="k">THEN</span> release <b>{amount} tUSDC</b> to <span className="mono">{recipient || "0x…"}</span>
-              </div>
-            </div>
 
-            {!connected && <p className="err">Connect your wallet and switch to Somnia Shannon (chain 50312).</p>}
-
-            {createdId ? (
-              <div className="donebox">
-                <p>✔ Condition #{createdId} created — funds locked.</p>
-                <a className="btnlink" style={{ cursor: "pointer" }} onClick={() => nav(`/condition/${createdId}`)}>
-                  View condition proof →
-                </a>
+              <div className="space-y-1.5">
+                <Label htmlFor="amt" className="data text-xs uppercase tracking-wider">
+                  Amount, tUSDC
+                </Label>
+                <Input id="amt" type="number" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} className="rounded-none border-foreground bg-white/60" />
               </div>
-            ) : (
-              <button className="cta" disabled={busy || !connected || !CONDITION_VAULT} onClick={create}>
-                {busy ? "Locking funds…" : "LOCK FUNDS"}
-              </button>
-            )}
-            {msg && <p className={msg.startsWith("Transaction failed") ? "err" : "msg"}>{msg}</p>}
-          </>
-        )}
-      </section>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="rcpt" className="data text-xs uppercase tracking-wider">
+                  Recipient address
+                </Label>
+                <Input id="rcpt" placeholder="0x..." value={recipient} onChange={(e) => setRecipient(e.target.value)} className="rounded-none border-foreground bg-white/60 data" />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="exp" className="data text-xs uppercase tracking-wider">
+                  Expiry, minutes
+                </Label>
+                <Input id="exp" type="number" min="1" value={expiryMin} onChange={(e) => setExpiryMin(e.target.value)} className="rounded-none border-foreground bg-white/60" />
+              </div>
+
+              {/* the condition line */}
+              <div className="border-2 border-foreground bg-[#0a0a0a] p-3 text-[#edeae3]">
+                <div className="display text-sm uppercase tracking-wide">
+                  <span className="text-[#d9ff00]">IF</span> {selected ? marketLabel(selected).split("·")[0].trim() : ""} settles {side}
+                </div>
+                <div className="mt-1 text-sm text-[#edeae3]/75">
+                  <span className="data text-[#d9ff00]">THEN</span> release {amount || "0"} tUSDC to{" "}
+                  <span className="data text-[#edeae3]">{recipient ? shortAddr(recipient) : "0x..."}</span>
+                </div>
+              </div>
+
+              {!connected && <p className="text-sm text-[#ff4d00]">Connect your wallet and switch to Somnia Shannon (chain 50312).</p>}
+
+              {createdId ? (
+                <div className="border-2 border-[#2c5f4d] bg-[#2c5f4d]/10 p-3">
+                  <p className="text-sm">
+                    <span className="font-semibold text-[#2c5f4d]">Condition #{createdId} created.</span> Funds are locked
+                    in the vault.
+                  </p>
+                  <Button variant="link" size="sm" className="p-0 text-[#2c5f4d]" onClick={() => nav(`/condition/${createdId}`)}>
+                    View condition proof →
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  size="lg"
+                  className="display w-full border-2 border-foreground bg-[#d9ff00] uppercase tracking-wider text-foreground shadow-[4px_4px_0_#0a0a0a] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none"
+                  disabled={busy || !connected || !CONDITION_VAULT}
+                  onClick={create}
+                >
+                  {busy ? "Locking funds..." : "Lock funds"}
+                </Button>
+              )}
+              {msg && <p className={`text-sm ${msg.startsWith("Transaction failed") ? "text-[#ff4d00]" : "text-foreground/70"}`}>{msg}</p>}
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -455,28 +601,47 @@ function RecentConditions() {
       }
     })();
   }, []);
-  if (!items) return <p className="muted small">Loading conditions…</p>;
-  if (items.length === 0) return <p className="muted small">No conditions yet — create the first one above.</p>;
+  if (!items) return <p className="text-sm text-foreground/55">Loading conditions...</p>;
+  if (items.length === 0) return <p className="text-sm text-foreground/55">No conditions yet. Create the first one above.</p>;
   return (
-    <section className="card" style={{ marginTop: 20 }}>
-      <h2 className="step" style={{ margin: "0 0 12px" }}>Recent conditions</h2>
-      <div className="condlist">
-        {items.map((c) => {
-          const st = STATE_NAMES[c.state] ?? "UNKNOWN";
-          return (
-            <button key={c.id} className="condrow" onClick={() => nav(`/condition/${c.id}`)}>
-              <span className="mono">#{c.id}</span>
-              <span className="statepill" style={{ background: STATE_COLORS[st] }}>{st}</span>
-              <span className="arrow-more">→</span>
-            </button>
-          );
-        })}
+    <section>
+      <div className="data mb-4 text-xs uppercase tracking-widest text-foreground/50">Recent conditions</div>
+      <div className="border-2 border-foreground bg-white/40">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="data text-xs uppercase">Id</TableHead>
+              <TableHead className="data text-xs uppercase">Market</TableHead>
+              <TableHead className="data text-xs uppercase">Expected</TableHead>
+              <TableHead className="data text-xs uppercase">Amount</TableHead>
+              <TableHead className="data text-xs uppercase">State</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((c) => {
+              const st = STATE_NAMES[c.state] ?? "UNKNOWN";
+              return (
+                <TableRow key={c.id} className="cursor-pointer hover:bg-[#d9ff00]/30" onClick={() => nav(`/condition/${c.id}`)}>
+                  <TableCell className="data">#{c.id}</TableCell>
+                  <TableCell className="data">on chain</TableCell>
+                  <TableCell className="data">-</TableCell>
+                  <TableCell className="data">-</TableCell>
+                  <TableCell>
+                    <Badge variant={stateBadgeVariant(c.state)} className="border border-foreground">
+                      {st}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       </div>
     </section>
   );
 }
 
-// ---------------- CONDITION DETAIL ----------------
+/* ---------------- condition detail ---------------- */
 
 function ConditionDetailView({ id }: { id: string }) {
   const [cond, setCond] = useState<ConditionRow | null>(null);
@@ -491,10 +656,8 @@ function ConditionDetailView({ id }: { id: string }) {
         const [c, s] = await Promise.all([readCondition(cid), readConditionState(cid)]);
         setCond(c);
         setState(s);
-        // read the DreamDEX market's canonical state
         try {
-          const { parseAbi: pa } = await import("viem");
-          const marketAbi = pa([
+          const marketAbi = parseAbi([
             "function isResolved() view returns (bool)",
             "function isVoided() view returns (bool)",
             "function payoutNumerators() view returns (uint256[])",
@@ -507,14 +670,14 @@ function ConditionDetailView({ id }: { id: string }) {
           let winner: number | null = null;
           if (resolved && !voided) {
             let best = 0n;
-            payouts.forEach((v: bigint, i: number) => {
+            (payouts as bigint[]).forEach((v, i) => {
               if (v > best) {
                 best = v;
                 winner = i;
               }
             });
           }
-          setMkt({ resolved: Boolean(resolved), voided: Boolean(voided), winner, payouts: payouts.map((p: bigint) => p.toString()) });
+          setMkt({ resolved: Boolean(resolved), voided: Boolean(voided), winner, payouts: (payouts as bigint[]).map((p) => p.toString()) });
         } catch {
           setMkt(null);
         }
@@ -524,8 +687,8 @@ function ConditionDetailView({ id }: { id: string }) {
     })();
   }, [id]);
 
-  if (err) return <p className="err">Could not read condition #{id}: {err}</p>;
-  if (!cond || state === null) return <p className="muted">Reading condition #{id} from the chain…</p>;
+  if (err) return <p className="text-sm text-[#ff4d00]">Could not read condition #{id}: {err}</p>;
+  if (!cond || state === null) return <p className="text-sm text-foreground/55">Reading condition #{id} from the chain...</p>;
 
   const st = STATE_NAMES[state] ?? "UNKNOWN";
   const expSide = cond.expected === 0 ? "UP" : "DOWN";
@@ -533,108 +696,127 @@ function ConditionDetailView({ id }: { id: string }) {
   const holds = actualSide ? actualSide === expSide : null;
   const amountStr = (Number(cond.amount) / 10 ** TUSDC_DECIMALS).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
+  const steps = [
+    { label: "Created", on: true, sub: `condition #${id} recorded` },
+    { label: "Funded", on: true, sub: `${amountStr} tUSDC locked` },
+    { label: "Market resolved", on: state >= 1, sub: mkt?.resolved ? `market ${shortAddr(cond.market)}` : "not finalized yet" },
+    {
+      label: "Condition",
+      on: state >= 1,
+      sub: mkt?.resolved ? (holds ? "TRUE, release allowed" : mkt.voided ? "VOIDED, fail closed" : "FALSE, fail closed") : "unresolved",
+    },
+    { label: "Executed", on: state === 3, sub: "funds sent to recipient" },
+  ];
+
   return (
-    <div className="detailwrap">
-      <div className="detailhead">
-        <h1>
-          CONDITION #{id} <span className="statepill big" style={{ background: STATE_COLORS[st] }}>{st}</span>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="display text-3xl font-bold uppercase tracking-tight">
+          Condition #{id} <Badge variant={stateBadgeVariant(state)} className="ml-2 border-2 border-foreground">{st}</Badge>
         </h1>
-        <button className="btnlink" style={{ cursor: "pointer" }} onClick={() => nav("/verify")}>
-          Verify from chain →
-        </button>
+        <Button variant="outline" size="sm" className="data uppercase tracking-wider" onClick={() => nav("/verify")}>
+          Verify from chain
+        </Button>
       </div>
 
-      <div className="timeline">
-        <Step on label="CREATED" sub={`condition #${id} recorded`} />
-        <Step on label="FUNDED" sub={`${amountStr} tUSDC locked`} />
-        <Step on={state >= 1 && state !== 4} label={mkt?.resolved ? "DREAMDEX RESOLVED" : "WAITING FOR MARKET"} sub={mkt?.resolved ? `market contract ${shortAddr(cond.market)}` : "market has not finalized yet"} />
-        {mkt && (
-          <Step
-            on={state >= 1}
-            label={mkt.resolved ? `CONDITION ${holds ? "TRUE" : "FALSE"}` : "UNRESOLVED"}
-            sub={
-              mkt.resolved
-                ? mkt.voided
-                  ? "market voided — fail closed"
-                  : `market settled ${actualSide} · expected ${expSide}`
-                : "read isResolved from the market contract"
-            }
-          />
-        )}
-        <Step on={state === 3} label="EXECUTED" sub="funds released to recipient" />
+      {/* timeline */}
+      <div className="border-2 border-foreground bg-white/40 p-4">
+        <div className="grid gap-2 sm:grid-cols-5">
+          {steps.map((s, i) => (
+            <div key={s.label} className={`border p-3 ${s.on ? "border-foreground bg-[#d9ff00]/30" : "border-foreground/20 bg-white/30 opacity-55"}`}>
+              <div className="data text-[10px] uppercase tracking-wider text-foreground/50">Step {i + 1}</div>
+              <div className="display mt-1 text-sm font-semibold uppercase">{s.label}</div>
+              <div className="mt-0.5 text-[11px] text-foreground/60">{s.sub}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className="homerow">
-        <section className="card">
-          <h3>Condition</h3>
-          <table className="kv">
-            <tbody>
-              <tr><td>Market id</td><td className="mono">{cond.marketId.slice(0, 12)}…{cond.marketId.slice(-6)}</td></tr>
-              <tr><td>Market contract</td><td className="mono"><a href={addrLink(cond.market)} target="_blank" rel="noreferrer">{shortAddr(cond.market)} ↗</a></td></tr>
-              <tr><td>Expected</td><td><b>{expSide}</b></td></tr>
-              <tr><td>Amount locked</td><td>{amountStr} tUSDC</td></tr>
-              <tr><td>Recipient</td><td className="mono">{shortAddr(cond.recipient)}</td></tr>
-              <tr><td>Creator</td><td className="mono">{shortAddr(cond.creator)}</td></tr>
-              <tr><td>Expiry</td><td>{new Date(Number(cond.expiry) * 1000).toLocaleString()}</td></tr>
-            </tbody>
-          </table>
-        </section>
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* condition params */}
+        <Card className="border-2 border-foreground">
+          <CardHeader>
+            <CardTitle className="display text-sm uppercase tracking-wider">Condition parameters</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableBody>
+                <KV k="Market id" v={`${cond.marketId.slice(0, 10)}...${cond.marketId.slice(-6)}`} mono />
+                <KV k="Market contract" v={shortAddr(cond.market)} mono link={addrLink(cond.market)} />
+                <KV k="Expected" v={expSide} strong />
+                <KV k="Amount locked" v={`${amountStr} tUSDC`} />
+                <KV k="Recipient" v={shortAddr(cond.recipient)} mono link={addrLink(cond.recipient)} />
+                <KV k="Creator" v={shortAddr(cond.creator)} mono link={addrLink(cond.creator)} />
+                <KV k="Expiry" v={new Date(Number(cond.expiry) * 1000).toLocaleString()} />
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
-        <section className="card">
-          <h3>DreamDEX market state (canonical)</h3>
-          {mkt ? (
-            <table className="kv">
-              <tbody>
-                <tr><td>isResolved</td><td><b>{mkt.resolved ? "true" : "false"}</b></td></tr>
-                <tr><td>isVoided</td><td><b>{mkt.voided ? "true" : "false"}</b></td></tr>
-                <tr><td>Actual outcome</td><td><b>{mkt.winner === null ? "—" : actualSide}</b></td></tr>
-                <tr><td>Payout vector</td><td className="mono">[{mkt.payouts.join(", ")}]</td></tr>
-                <tr><td>Condition holds</td><td><b>{holds === null ? "—" : holds ? "TRUE ✓" : "FALSE ✗"}</b></td></tr>
-              </tbody>
-            </table>
-          ) : (
-            <p className="muted small">Market state read failed — check the market contract on the explorer.</p>
-          )}
-          <p className="muted small" style={{ marginTop: 10 }}>
-            Every field on this page is read live from the chain — no database, no cached result.
-          </p>
-        </section>
+        {/* market canonical state */}
+        <Card className="border-2 border-foreground">
+          <CardHeader>
+            <CardTitle className="display text-sm uppercase tracking-wider">DreamDEX market state, read on chain</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {mkt ? (
+              <Table>
+                <TableBody>
+                  <KV k="isResolved" v={mkt.resolved ? "true" : "false"} />
+                  <KV k="isVoided" v={mkt.voided ? "true" : "false"} />
+                  <KV k="Actual outcome" v={actualSide ?? "none yet"} strong={mkt.resolved && !mkt.voided} />
+                  <KV k="Payout vector" v={`[${mkt.payouts.join(", ")}]`} mono />
+                  <KV k="Condition holds" v={holds === null ? "pending" : holds ? "TRUE" : "FALSE"} strong={holds === true} accent={holds === false} />
+                </TableBody>
+              </Table>
+            ) : (
+              <p className="text-sm text-foreground/55">Market state read failed. Check the market contract on the explorer.</p>
+            )}
+            <p className="mt-3 text-[11px] text-foreground/45">Every field on this page is a live read. No database, no cached result.</p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
 }
 
-function Step({ label, sub, on }: { label: string; sub?: string; on: boolean }) {
+function KV({ k, v, mono, link, strong, accent }: { k: string; v: string; mono?: boolean; link?: string; strong?: boolean; accent?: boolean }) {
   return (
-    <div className={`tl-step ${on ? "on" : ""}`}>
-      <div className="tl-dot" />
-      <div>
-        <div className="tl-label">{label}</div>
-        {sub && <div className="tl-sub">{sub}</div>}
-      </div>
-    </div>
+    <TableRow>
+      <TableCell className="data py-2 text-xs uppercase tracking-wider text-foreground/55">{k}</TableCell>
+      <TableCell className={`py-2 text-sm ${mono ? "data" : ""} ${strong ? "font-semibold" : ""} ${accent ? "text-[#ff4d00]" : ""}`}>
+        {link ? (
+          <a href={link} target="_blank" rel="noreferrer" className="underline-offset-4 hover:underline">
+            {v} ↗
+          </a>
+        ) : (
+          v
+        )}
+      </TableCell>
+    </TableRow>
   );
 }
 
-// ---------------- VERIFY ----------------
+/* ---------------- verify ---------------- */
 
 function VerifyView() {
   const [id, setId] = useState("");
-  const [data, setData] = useState<{ id: string; cond: ConditionRow; state: number; mkt: { resolved: boolean; voided: boolean; winner: number | null } | null } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [res, setRes] = useState<{ cond: ConditionRow; state: number; mkt: { resolved: boolean; voided: boolean; winner: number | null } | null } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const lookup = async (raw: string) => {
     const cid = raw.replace(/\D/g, "").trim();
     if (!cid) return;
+    setLoading(true);
     setErr(null);
-    setData(null);
+    setRes(null);
     try {
       const n = BigInt(cid);
       const [cond, state] = await Promise.all([readCondition(n), readConditionState(n)]);
       let mkt: { resolved: boolean; voided: boolean; winner: number | null } | null = null;
       try {
-        const { parseAbi: pa } = await import("viem");
-        const marketAbi = pa([
+        const marketAbi = parseAbi([
           "function isResolved() view returns (bool)",
           "function isVoided() view returns (bool)",
           "function payoutNumerators() view returns (uint256[])",
@@ -647,106 +829,159 @@ function VerifyView() {
         let winner: number | null = null;
         if (resolved && !voided) {
           let best = 0n;
-          payouts.forEach((v: bigint, i: number) => {
-            if (v > best) { best = v; winner = i; }
+          (payouts as bigint[]).forEach((v, i) => {
+            if (v > best) {
+              best = v;
+              winner = i;
+            }
           });
         }
         mkt = { resolved: Boolean(resolved), voided: Boolean(voided), winner };
       } catch {
         mkt = null;
       }
-      setData({ id: cid, cond, state, mkt });
+      setRes({ cond, state, mkt });
     } catch (e) {
       setErr(`Could not read condition #${cid}: ${(e as Error).message?.slice(0, 160)}`);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="verifywrap">
-      <h1>Verify a condition from chain state</h1>
-      <p className="muted">Enter a condition id. Reads the vault + the referenced DreamDEX market directly from the chain — no backend, no indexer truth.</p>
-      <div className="verifyrow">
-        <input placeholder="condition id, e.g. 1" value={id} onChange={(e) => setId(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookup(id)} />
-        <button className="cta" onClick={() => lookup(id)} disabled={!CONDITION_VAULT || !id}>VERIFY</button>
+    <div className="mx-auto max-w-2xl space-y-5">
+      <div className="space-y-1">
+        <h1 className="display text-3xl font-bold uppercase tracking-tight">Verify from chain state</h1>
+        <p className="text-sm text-foreground/60">
+          Enter a condition id. The verifier reads the vault and the referenced DreamDEX market directly from the chain.
+          No backend decides anything.
+        </p>
       </div>
-      {err && <p className="err">{err}</p>}
-      {data && (
-        <div className="card verifycard">
-          <div className="condhead">
-            <span>CONDITION #{data.id}</span>
-            <span className="statepill" style={{ background: STATE_COLORS[STATE_NAMES[data.state]] }}>{STATE_NAMES[data.state]}</span>
-          </div>
-          {data.mkt && (
-            <div className="verifyverdict">
-              <div>
-                <span className="muted small">expected</span>
-                <b>{data.cond.expected === 0 ? "UP" : "DOWN"}</b>
-              </div>
-              <div className="vs">vs</div>
-              <div>
-                <span className="muted small">on-chain result</span>
-                <b>
-                  {data.mkt.winner === null ? "unresolved" : data.mkt.winner === 0 ? "UP" : "DOWN"}
-                  {data.mkt.voided ? " (voided)" : ""}
-                </b>
-              </div>
-              <div className="vs">=</div>
-              <div>
-                <span className="muted small">condition</span>
-                <b className={data.mkt.winner === (data.cond.expected as number) ? "oktext" : "badtext"}>
-                  {data.mkt.winner === null ? "—" : data.mkt.winner === (data.cond.expected as number) ? "TRUE ✓" : "FALSE ✗"}
-                </b>
-              </div>
+      <div className="flex gap-2">
+        <Input
+          placeholder="condition id, e.g. 1"
+          value={id}
+          onChange={(e) => setId(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && lookup(id)}
+          className="rounded-none border-2 border-foreground bg-white/60 data"
+        />
+        <Button
+          className="display border-2 border-foreground bg-[#d9ff00] uppercase tracking-wider shadow-[3px_3px_0_#0a0a0a] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none"
+          disabled={!CONDITION_VAULT || !id || loading}
+          onClick={() => lookup(id)}
+        >
+          {loading ? "Reading..." : "Verify"}
+        </Button>
+      </div>
+      {err && <p className="text-sm text-[#ff4d00]">{err}</p>}
+      {res && (
+        <Card className="border-2 border-foreground bg-white/50 shadow-[5px_5px_0_#0a0a0a]">
+          <CardContent className="space-y-4 pt-5">
+            <div className="flex items-center justify-between">
+              <span className="data text-sm uppercase tracking-wider">Condition #{id}</span>
+              <Badge variant={stateBadgeVariant(res.state)} className="border-2 border-foreground">{STATE_NAMES[res.state]}</Badge>
             </div>
-          )}
-          <button className="btnlink" style={{ cursor: "pointer" }} onClick={() => nav(`/condition/${data.id}`)}>
-            Full proof page →
-          </button>
-        </div>
+            {res.mkt && (
+              <div className="grid grid-cols-3 gap-3 border-y border-foreground/15 py-3">
+                <div>
+                  <div className="data text-[10px] uppercase tracking-wider text-foreground/50">Expected</div>
+                  <div className="display text-xl font-semibold">{res.cond.expected === 0 ? "UP" : "DOWN"}</div>
+                </div>
+                <div className="text-center">
+                  <div className="data text-[10px] uppercase tracking-wider text-foreground/50">On chain</div>
+                  <div className="display text-xl font-semibold">
+                    {res.mkt.winner === null ? "-" : res.mkt.winner === 0 ? "UP" : "DOWN"}
+                    {res.mkt.voided ? " (void)" : ""}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="data text-[10px] uppercase tracking-wider text-foreground/50">Condition</div>
+                  <div className={`display text-xl font-semibold ${res.mkt.winner === (res.cond.expected as number) ? "text-[#2c5f4d]" : "text-[#ff4d00]"}`}>
+                    {res.mkt.winner === null ? "-" : res.mkt.winner === (res.cond.expected as number) ? "TRUE" : "FALSE"}
+                  </div>
+                </div>
+              </div>
+            )}
+            <Button variant="link" size="sm" className="p-0 text-[#2c5f4d]" onClick={() => nav(`/condition/${id}`)}>
+              Open full proof page →
+            </Button>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
 }
 
-// ---------------- DOCS ----------------
+/* ---------------- docs ---------------- */
 
 function DocsView() {
   return (
-    <div className="aboutwrap">
-      <h1>How ORACLELESS works</h1>
-      <div className="card notbranch">
-        <h3>Why this is not Branch</h3>
-        <p>
-          Branch: outcome → <b>another DreamDEX trade</b> (a trading strategy).<br />
-          ORACLELESS: outcome → <b>arbitrary external contract action</b> (payment, escrow, treasury, agent authority — any programmable state transition).
-        </p>
-      </div>
-      <div className="card trust">
-        <h3>Trust model</h3>
-        <ul>
-          <li><b>DreamDEX determines what happened.</b> The vault reads the market contract's canonical state (isResolved + payoutNumerators, winner = argmax). No indexer, frontend, backend, or keeper decides.</li>
-          <li><b>ORACLELESS determines what that fact may trigger.</b> execute() is permissionless — anyone can fire it, nobody can fake the outcome or redirect the payout.</li>
-          <li><b>Fail closed.</b> Voided, wrong-outcome, unresolved, and expired conditions never release funds. The creator reclaims after expiry.</li>
-          <li><b>Parameters are immutable</b> after creation — market, expected outcome, recipient, amount, and expiry cannot be changed.</li>
-        </ul>
-      </div>
-      <div className="card">
-        <h3>Contracts</h3>
-        <table className="kv">
-          <tbody>
-            <tr><td>OraclelessConditionVault</td><td className="mono"><a href={addrLink(CONDITION_VAULT)} target="_blank" rel="noreferrer">{CONDITION_VAULT.slice(0, 10)}…{CONDITION_VAULT.slice(-6)} ↗</a></td></tr>
-            <tr><td>DreamDEX BinaryMarketsModule</td><td className="mono">0x3ecC694C…E388</td></tr>
-            <tr><td>Collateral</td><td>tUSDC (6 dp, faucet-mintable)</td></tr>
-            <tr><td>Network</td><td>Somnia Shannon · chain 50312</td></tr>
-          </tbody>
-        </table>
-        <p className="muted small">Settlement truth comes from the DreamDEX market contract, which ORACLELESS never controls.</p>
-      </div>
-      <div className="card">
-        <h3>Verify from the CLI</h3>
-        <pre className="codeblock">{`CONDITION_VAULT=${CONDITION_VAULT || "<vault>"} node web/scripts/verify.mjs 1`}</pre>
-        <p className="muted small">The verifier re-derives a condition's state from the chain and exits non-zero on inconsistency.</p>
-      </div>
+    <div className="mx-auto max-w-3xl space-y-6">
+      <h1 className="display text-3xl font-bold uppercase tracking-tight">How ORACLELESS works</h1>
+
+      <Card className="border-2 border-foreground">
+        <CardHeader>
+          <CardTitle className="display text-sm uppercase tracking-wider">Not Branch</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1 text-sm">
+          <p><b>Branch:</b> outcome to another DreamDEX trade. A trading strategy.</p>
+          <p><b>ORACLELESS:</b> outcome to an arbitrary external contract action. Payment, escrow, treasury, agent authority.</p>
+          <p className="pt-2 text-foreground/65">
+            The consumer of the outcome is an external contract, not another order. ORACLELESS is not an oracle, prediction
+            market, escrow product, or trading strategy.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2 border-foreground">
+        <CardHeader>
+          <CardTitle className="display text-sm uppercase tracking-wider">Trust model</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div>
+            <div className="display font-semibold uppercase">Source of truth is the chain</div>
+            <p className="text-foreground/65">The vault reads isResolved plus payoutNumerators (winner is the argmax). No indexer, backend, or keeper.</p>
+          </div>
+          <div>
+            <div className="display font-semibold uppercase">Anyone can execute, only the recipient receives</div>
+            <p className="text-foreground/65">Execution permission and payout ownership are separate by construction.</p>
+          </div>
+          <div>
+            <div className="display font-semibold uppercase">Fail closed</div>
+            <p className="text-foreground/65">Wrong outcome, voided, unresolved, and expired conditions never release funds. Creator reclaims after expiry.</p>
+          </div>
+          <div>
+            <div className="display font-semibold uppercase">No admin keys</div>
+            <p className="text-foreground/65">No function can redirect a payout, change a condition, or withdraw on the creator's behalf.</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2 border-foreground">
+        <CardHeader>
+          <CardTitle className="display text-sm uppercase tracking-wider">Contracts</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableBody>
+              <KV k="OraclelessConditionVault" v={CONDITION_VAULT ? shortAddr(CONDITION_VAULT) : "unset"} mono link={CONDITION_VAULT ? addrLink(CONDITION_VAULT) : undefined} />
+              <KV k="DreamDEX BinaryMarketsModule" v="0x3ecC...E388" mono />
+              <KV k="Collateral" v="tUSDC, 6 decimals, faucet minted" />
+              <KV k="Network" v="Somnia Shannon, chain 50312" />
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2 border-foreground">
+        <CardHeader>
+          <CardTitle className="display text-sm uppercase tracking-wider">Verify from the CLI</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <pre className="overflow-x-auto border border-foreground/20 bg-[#0a0a0a] p-3 text-[12px] text-[#d9ff00] data">{`CONDITION_VAULT=${CONDITION_VAULT || "<vault>"} node web/scripts/verify.mjs 1`}</pre>
+          <p className="mt-2 text-xs text-foreground/50">The verifier re-derives a condition's state from the chain and exits non-zero on inconsistency.</p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
